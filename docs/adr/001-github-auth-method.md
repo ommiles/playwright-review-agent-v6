@@ -29,13 +29,13 @@ We chose to use **`secrets.GITHUB_TOKEN`** instead of OIDC authentication.
 
 4. **No external dependencies** - Does not require the Claude Code GitHub App to be installed on the repository.
 
-### OIDC Pros (why we didn't choose it)
+### OIDC Advantages
 
 1. **Fine-grained permissions** - OIDC tokens can be scoped more precisely through the Claude Code GitHub App
 2. **Audit trail** - Token exchanges are logged through the GitHub App
 3. **No secret management** - Tokens are generated on-demand, not stored as secrets
 
-### OIDC Cons (why we avoided it)
+### OIDC Disadvantages
 
 1. **Workflow file validation** - The workflow file must exist and be identical on the default branch. Error message: "Workflow validation failed. The workflow file must exist and have identical content to the version on the repository's default branch."
 
