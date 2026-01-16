@@ -101,6 +101,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          bot_name: "playwright-reviewer"
           # Use /review for auto-triggered reviews, let @claude mentions pass through naturally
           prompt: "${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && 'Review the Playwright test changes. Focus on our CONVENTIONS.md standards including: COB pattern compliance, selector strategy, auto-waiting assertions, and code reuse. Provide inline comments on specific issues.' || '' }}"
           claude_args: "--max-turns 10"
