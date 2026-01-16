@@ -79,12 +79,29 @@ jobs:
       - name: Get changed Playwright files
         id: changed-files
         if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+        env:
+          EVENT_ACTION: ${{ github.event.action }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} \
-            | grep 'apps/backend-e2e/playwright/' \
-            | grep -v 'README.md' \
-            | grep -v 'CONVENTIONS.md' \
-            | tr '\n' ' ')
+          # For 'synchronize' (new push), only check the new commits
+          # For 'opened' or 'edited' (checkbox), check the full PR diff
+          if [[ "$EVENT_ACTION" == "synchronize" && -n "$BEFORE_SHA" ]]; then
+            echo "Checking new commits only: $BEFORE_SHA..$HEAD_SHA"
+            FILES=$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA" \
+              | grep 'apps/backend-e2e/playwright/' \
+              | grep -v 'README.md' \
+              | grep -v 'CONVENTIONS.md' \
+              | tr '\n' ' ')
+          else
+            echo "Checking full PR diff: $BASE_SHA..$HEAD_SHA"
+            FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+              | grep 'apps/backend-e2e/playwright/' \
+              | grep -v 'README.md' \
+              | grep -v 'CONVENTIONS.md' \
+              | tr '\n' ' ')
+          fi
           echo "files=$FILES" >> $GITHUB_OUTPUT
 
           # Count files and calculate tiered max-turns
@@ -99,7 +116,7 @@ jobs:
             echo "Found $FILE_COUNT Playwright file(s), setting max-turns to $MAX_TURNS"
           else
             echo "max_turns=10" >> $GITHUB_OUTPUT
-            echo "No Playwright files changed"
+            echo "No Playwright files changed in this push"
           fi
 
       - name: Run Claude Code Review
