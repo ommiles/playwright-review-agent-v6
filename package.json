@@ -1,0 +1,8 @@
+{
+  "name": "playwright-review-agent",
+  "private": true,
+  "description": "Test repo for Playwright code review workflow",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  }
+}
