@@ -89,15 +89,16 @@ jobs:
 
           # Count files and calculate tiered max-turns
           # 1-10 files: 10 turns, 11-20: 20, 21-30: 30, etc. (max 50)
-          FILE_COUNT=$(echo "$FILES" | wc -w)
-          MAX_TURNS=$(( ((FILE_COUNT - 1) / 10 + 1) * 10 ))
-          if [ $MAX_TURNS -gt 50 ]; then MAX_TURNS=50; fi
-          if [ $MAX_TURNS -lt 10 ]; then MAX_TURNS=10; fi
-          echo "max_turns=$MAX_TURNS" >> $GITHUB_OUTPUT
+          FILE_COUNT=$(echo "$FILES" | wc -w | tr -d ' ')
+          echo "file_count=$FILE_COUNT" >> $GITHUB_OUTPUT
 
-          if [ -n "$FILES" ]; then
+          if [ "$FILE_COUNT" -gt 0 ]; then
+            MAX_TURNS=$(( ((FILE_COUNT - 1) / 10 + 1) * 10 ))
+            if [ $MAX_TURNS -gt 50 ]; then MAX_TURNS=50; fi
+            echo "max_turns=$MAX_TURNS" >> $GITHUB_OUTPUT
             echo "Found $FILE_COUNT Playwright file(s), setting max-turns to $MAX_TURNS"
           else
+            echo "max_turns=10" >> $GITHUB_OUTPUT
             echo "No Playwright files changed"
           fi
 
@@ -105,7 +106,7 @@ jobs:
         if: |
           github.event_name == 'issue_comment' ||
           github.event_name == 'pull_request_review_comment' ||
-          steps.changed-files.outputs.files != ''
+          steps.changed-files.outputs.file_count > 0
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -118,5 +119,5 @@ jobs:
       - name: Skip (no Playwright changes)
         if: |
           (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') &&
-          steps.changed-files.outputs.files == ''
+          steps.changed-files.outputs.file_count == 0
         run: echo "No Playwright files changed, skipping review"
