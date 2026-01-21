@@ -2,6 +2,10 @@
 
 AI-powered code review for Playwright test changes using Claude.
 
+Automatically reviews PRs against our CONVENTIONS.md:
+
+![Code Review Output](docs/images/code-review-output.png)
+
 Ask Claude questions directly in PR comments:
 
 ![PR Comment Trigger](docs/images/pr-comment-trigger.png)
@@ -58,7 +62,7 @@ Copy `.github/pull_request_template.md` to enable the manual re-run checkbox.
 
 ### Bot Identity
 - **Name**: `playwright-reviewer`
-- Distinguishes this agent from other Claude bots in your organization
+- Distinguishes this agent from other Claude bots in our organization
 
 ### Authentication
 Uses `secrets.GITHUB_TOKEN` (not OIDC) for simplicity.
