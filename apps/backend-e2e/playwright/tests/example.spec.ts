@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-// Test file with intentional issues
+// Test file for review
 // Contains some intentional issues for the review agent to catch
 // Testing suggestion syntax feature
 
