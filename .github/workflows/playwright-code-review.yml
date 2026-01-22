@@ -81,32 +81,33 @@ jobs:
         if: steps.changed-files.outputs.file_count > 0
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PROMPT="Review the Playwright test changes. Focus on our CONVENTIONS.md standards including: COB pattern compliance, selector strategy, auto-waiting assertions, and code reuse. Provide inline comments on specific issues."
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          PROMPT="Review the Playwright test changes in PR #${PR_NUMBER} of ${OWNER}/${REPO}.
+
+          Focus on CONVENTIONS.md standards:
+          - COB pattern compliance
+          - Selector strategy
+          - Auto-waiting assertions
+          - Code reuse
+
+          Use the GitHub MCP server to submit a pull request review with inline comments on specific lines where issues are found. Use the create_pull_request_review tool with:
+          - owner: ${OWNER}
+          - repo: ${REPO}
+          - pull_number: ${PR_NUMBER}
+          - event: COMMENT
+          - body: A brief summary of the review
+          - comments: Array of inline comments with path, line, and body for each issue
+
+          Be concise. No preamble needed."
 
           claude -p "$PROMPT" \
             --max-turns ${{ steps.changed-files.outputs.max_turns || '10' }} \
-            > review-output.md
-
-      - name: Post Review to PR
-        if: steps.changed-files.outputs.file_count > 0
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-
-          if [[ -f review-output.md && -s review-output.md ]]; then
-            echo "## 🎭 Playwright Code Review" > pr-comment.md
-            echo "" >> pr-comment.md
-            cat review-output.md >> pr-comment.md
-            echo "" >> pr-comment.md
-            echo "---" >> pr-comment.md
-            echo "*Posted by playwright-reviewer*" >> pr-comment.md
-
-            gh pr comment "$PR_NUMBER" --body-file pr-comment.md
-          else
-            echo "No review output generated"
-          fi
+            --allowedTools "mcp__github__create_pull_request_review,mcp__github__get_pull_request,mcp__github__get_pull_request_files,Read,Glob,Grep"
 
       - name: Skip (no Playwright changes)
         if: steps.changed-files.outputs.file_count == 0
