@@ -151,10 +151,10 @@ jobs:
             PROMPT="${{ github.event.comment.body }}"
           fi
 
-          # Run Claude Code with output file (-p for single-shot prompt execution)
+          # Run Claude Code (-p for single-shot prompt, redirect output to file)
           claude -p "$PROMPT" \
-            --output-file review-output.md \
-            --max-turns ${{ steps.changed-files.outputs.max_turns || '10' }}
+            --max-turns ${{ steps.changed-files.outputs.max_turns || '10' }} \
+            > review-output.md
 
       - name: Post Review to PR
         if: |
