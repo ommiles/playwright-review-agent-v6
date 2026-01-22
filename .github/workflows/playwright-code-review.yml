@@ -107,10 +107,16 @@ jobs:
           {
             \"body\": \"Brief summary of the review\",
             \"comments\": [
-              {\"path\": \"relative/file/path.ts\", \"line\": 42, \"body\": \"Issue description\"}
+              {
+                \"path\": \"relative/file/path.ts\",
+                \"line\": 42,
+                \"body\": \"Issue description\n\n\\\`\\\`\\\`suggestion\ncorrected code for that line\n\\\`\\\`\\\`\"
+              }
             ]
           }
 
+          IMPORTANT: For each comment, include a suggested fix using GitHub's suggestion syntax.
+          The suggestion block should contain the corrected version of that specific line.
           Only output the JSON, nothing else. If no issues found, use empty comments array."
 
           claude -p "$PROMPT" \
@@ -127,9 +133,11 @@ jobs:
           {
             "body": "Found 3 issues in Playwright tests that need attention.",
             "comments": [
-              {"path": "apps/backend-e2e/playwright/tests/example.spec.ts", "line": 12, "body": "**Raw locator** - Should use COB pattern. Move this locator to a Component Object file."},
-              {"path": "apps/backend-e2e/playwright/tests/example.spec.ts", "line": 20, "body": "**waitForTimeout** - Banned pattern. Use auto-waiting assertions instead."},
-              {"path": "apps/backend-e2e/playwright/tests/example.spec.ts", "line": 45, "body": "**Missing await** - This async operation needs `await` to prevent silent failures."}
+              {
+                "path": "apps/backend-e2e/playwright/tests/example.spec.ts",
+                "line": 3,
+                "body": "**Comment style** - Consider using a more descriptive comment.\n\n```suggestion\n// Playwright test file with intentional convention violations for review testing\n```"
+              }
             ]
           }
           EOF
