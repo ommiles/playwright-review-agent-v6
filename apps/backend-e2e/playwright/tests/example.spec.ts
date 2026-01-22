@@ -32,4 +32,20 @@ test.describe("Example Test Suite", () => {
     await page.locator("#submit-btn").click();
     await expect(page.locator("#submit-btn")).toBeDisabled();
   });
+
+  test("should load user profile", async ({ page }) => {
+    await page.goto("/profile");
+
+    // Another raw locator - should use COB pattern
+    const profileCard = page.locator("div.profile-card");
+    await expect(profileCard).toBeVisible();
+
+    // Missing await on async operation
+    page.locator(".edit-button").click();
+
+    // Hard-coded timeout
+    await page.waitForTimeout(500);
+
+    await expect(page.locator(".edit-form")).toBeVisible();
+  });
 });
