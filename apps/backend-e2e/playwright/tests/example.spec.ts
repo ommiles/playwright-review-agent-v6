@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-// Test file to trigger the review agent
+// Test file with intentional issues
 // Contains some intentional issues for the review agent to catch
 // Final verification test
 
