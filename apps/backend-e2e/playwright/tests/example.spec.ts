@@ -64,4 +64,21 @@ test.describe("Example Test Suite", () => {
     const results = await page.locator(".search-result").allTextContents();
     expect(results).toContain("test product");
   });
+
+  test("should filter by category", async ({ page }) => {
+    await page.goto("/products");
+
+    // test.only left in code - should be flagged
+    // Raw locators throughout
+    await page.locator("select.category-filter").selectOption("electronics");
+
+    // Missing await
+    page.locator(".apply-filter").click();
+
+    // Hard wait
+    await page.waitForTimeout(1500);
+
+    const count = await page.locator(".product-card").count();
+    expect(count).toBeGreaterThan(0);
+  });
 });
