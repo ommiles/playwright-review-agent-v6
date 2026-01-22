@@ -49,4 +49,19 @@ test.describe("Example Test Suite", () => {
 
     await expect(page.locator(".edit-form")).toBeVisible();
   });
+
+  test("should search for products", async ({ page }) => {
+    await page.goto("/search");
+
+    // Raw locator
+    await page.locator("input.search-box").fill("test product");
+    await page.locator("button.search-submit").click();
+
+    // waitForTimeout instead of proper assertion
+    await page.waitForTimeout(2000);
+
+    // allTextContents without waiting
+    const results = await page.locator(".search-result").allTextContents();
+    expect(results).toContain("test product");
+  });
 });
