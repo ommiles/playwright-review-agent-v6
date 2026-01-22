@@ -160,11 +160,12 @@ jobs:
             exit 0
           fi
 
-          # Extract JSON from markdown code fences if present
-          if grep -q '```json' review.json; then
-            sed -n '/```json/,/```/p' review.json | sed '1d;$d' > review-clean.json
-          elif grep -q '```' review.json; then
-            sed -n '/```/,/```/p' review.json | sed '1d;$d' > review-clean.json
+          # Extract JSON from markdown code fences if Claude wrapped output in ```json
+          # Only strip fences if file STARTS with ``` (not if it contains ``` inside JSON)
+          FIRST_LINE=$(head -n1 review.json)
+          if [[ "$FIRST_LINE" == '```json'* ]] || [[ "$FIRST_LINE" == '```'* ]]; then
+            # Remove first and last lines (the fence markers)
+            sed '1d;$d' review.json > review-clean.json
           else
             cp review.json review-clean.json
           fi
