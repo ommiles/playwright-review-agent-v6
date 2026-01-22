@@ -1,64 +1,28 @@
 name: Playwright Code Review Agent
 
 on:
-  # Auto-trigger when Playwright files change
-  pull_request:
-    types: [opened, synchronize]
-    paths:
-      - 'apps/backend-e2e/playwright/**'
-      - '!apps/backend-e2e/playwright/README.md'
-      - '!apps/backend-e2e/playwright/CONVENTIONS.md'
-
-  # Manual re-run via checkbox (edited = checkbox state change)
+  # Manual trigger via checkbox in PR description
   pull_request_target:
     types: [edited]
 
-  # Allow @claude mentions for follow-up requests
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
-
 jobs:
-  # Check if this is a manual re-run request via checkbox
   check-trigger:
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.determine.outputs.should_run }}
     steps:
-      - name: Determine if review should run
+      - name: Check if review checkbox is checked
         id: determine
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-          EVENT_NAME: ${{ github.event_name }}
         run: |
-          # Auto-triggered by path change
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+          if echo "$PR_BODY" | grep -qiE '\[x\]\s*Run Playwright Code Review'; then
             echo "should_run=true" >> $GITHUB_OUTPUT
-            echo "Auto-triggered: Playwright files changed"
-            exit 0
+            echo "Checkbox is checked - triggering review"
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "Checkbox not checked - skipping"
           fi
-
-          # Comment-triggered (@claude mention)
-          if [[ "$EVENT_NAME" == "issue_comment" || "$EVENT_NAME" == "pull_request_review_comment" ]]; then
-            echo "should_run=true" >> $GITHUB_OUTPUT
-            echo "Comment-triggered: @claude mention"
-            exit 0
-          fi
-
-          # Manual re-run via checkbox (pull_request_target with edited)
-          if [[ "$EVENT_NAME" == "pull_request_target" ]]; then
-            if echo "$PR_BODY" | grep -qiE '\[x\]\s*Run Playwright Code Review'; then
-              echo "should_run=true" >> $GITHUB_OUTPUT
-              echo "Manual trigger: Checkbox is checked"
-            else
-              echo "should_run=false" >> $GITHUB_OUTPUT
-              echo "Skipping: Checkbox not checked"
-            fi
-            exit 0
-          fi
-
-          echo "should_run=false" >> $GITHUB_OUTPUT
 
   review:
     needs: check-trigger
@@ -67,7 +31,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-      issues: write
 
     steps:
       - name: Checkout code
@@ -78,34 +41,19 @@ jobs:
 
       - name: Get changed Playwright files
         id: changed-files
-        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
         env:
-          EVENT_ACTION: ${{ github.event.action }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          # For 'synchronize' (new push), only check the new commits
-          # For 'opened' or 'edited' (checkbox), check the full PR diff
-          if [[ "$EVENT_ACTION" == "synchronize" && -n "$BEFORE_SHA" ]]; then
-            echo "Checking new commits only: $BEFORE_SHA..$HEAD_SHA"
-            FILES=$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA" \
-              | grep 'apps/backend-e2e/playwright/' \
-              | grep -v 'README.md' \
-              | grep -v 'CONVENTIONS.md' \
-              | tr '\n' ' ')
-          else
-            echo "Checking full PR diff: $BASE_SHA..$HEAD_SHA"
-            FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-              | grep 'apps/backend-e2e/playwright/' \
-              | grep -v 'README.md' \
-              | grep -v 'CONVENTIONS.md' \
-              | tr '\n' ' ')
-          fi
+          echo "Checking full PR diff: $BASE_SHA..$HEAD_SHA"
+          FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+            | grep 'apps/backend-e2e/playwright/' \
+            | grep -v 'README.md' \
+            | grep -v 'CONVENTIONS.md' \
+            | tr '\n' ' ')
           echo "files=$FILES" >> $GITHUB_OUTPUT
 
           # Count files and calculate tiered max-turns
-          # 1-10 files: 10 turns, 11-20: 20, 21-30: 30, etc. (max 50)
           FILE_COUNT=$(echo "$FILES" | wc -w | tr -d ' ')
           echo "file_count=$FILE_COUNT" >> $GITHUB_OUTPUT
 
@@ -116,64 +64,38 @@ jobs:
             echo "Found $FILE_COUNT Playwright file(s), setting max-turns to $MAX_TURNS"
           else
             echo "max_turns=10" >> $GITHUB_OUTPUT
-            echo "No Playwright files changed in this push"
+            echo "No Playwright files changed"
           fi
 
       - name: Setup Node.js
-        if: |
-          github.event_name == 'issue_comment' ||
-          github.event_name == 'pull_request_review_comment' ||
-          steps.changed-files.outputs.file_count > 0
+        if: steps.changed-files.outputs.file_count > 0
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install Claude Code
-        if: |
-          github.event_name == 'issue_comment' ||
-          github.event_name == 'pull_request_review_comment' ||
-          steps.changed-files.outputs.file_count > 0
+        if: steps.changed-files.outputs.file_count > 0
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Run Claude Code Review
-        if: |
-          github.event_name == 'issue_comment' ||
-          github.event_name == 'pull_request_review_comment' ||
-          steps.changed-files.outputs.file_count > 0
+        if: steps.changed-files.outputs.file_count > 0
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # Build the prompt based on event type
-          if [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "pull_request_target" ]]; then
-            PROMPT="Review the Playwright test changes. Focus on our CONVENTIONS.md standards including: COB pattern compliance, selector strategy, auto-waiting assertions, and code reuse. Provide inline comments on specific issues."
-          else
-            # For @claude mentions, use the comment body as the prompt
-            PROMPT="${{ github.event.comment.body }}"
-          fi
+          PROMPT="Review the Playwright test changes. Focus on our CONVENTIONS.md standards including: COB pattern compliance, selector strategy, auto-waiting assertions, and code reuse. Provide inline comments on specific issues."
 
-          # Run Claude Code (-p for single-shot prompt, redirect output to file)
           claude -p "$PROMPT" \
             --max-turns ${{ steps.changed-files.outputs.max_turns || '10' }} \
             > review-output.md
 
       - name: Post Review to PR
-        if: |
-          github.event_name == 'issue_comment' ||
-          github.event_name == 'pull_request_review_comment' ||
-          steps.changed-files.outputs.file_count > 0
+        if: steps.changed-files.outputs.file_count > 0
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get PR number based on event type
-          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
-            PR_NUMBER="${{ github.event.issue.number }}"
-          else
-            PR_NUMBER="${{ github.event.pull_request.number }}"
-          fi
+          PR_NUMBER="${{ github.event.pull_request.number }}"
 
-          # Check if review output exists and has content
           if [[ -f review-output.md && -s review-output.md ]]; then
-            # Add header to identify the bot
             echo "## 🎭 Playwright Code Review" > pr-comment.md
             echo "" >> pr-comment.md
             cat review-output.md >> pr-comment.md
@@ -181,14 +103,11 @@ jobs:
             echo "---" >> pr-comment.md
             echo "*Posted by playwright-reviewer*" >> pr-comment.md
 
-            # Post comment to PR
             gh pr comment "$PR_NUMBER" --body-file pr-comment.md
           else
             echo "No review output generated"
           fi
 
       - name: Skip (no Playwright changes)
-        if: |
-          (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') &&
-          steps.changed-files.outputs.file_count == 0
+        if: steps.changed-files.outputs.file_count == 0
         run: echo "No Playwright files changed, skipping review"
