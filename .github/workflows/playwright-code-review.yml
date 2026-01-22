@@ -82,7 +82,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          PROMPT="Review the Playwright test changes. Focus on our CONVENTIONS.md standards including: COB pattern compliance, selector strategy, auto-waiting assertions, and code reuse. Provide inline comments on specific issues."
+          PROMPT="Review the Playwright test changes. Focus on our CONVENTIONS.md standards including: COB pattern compliance, selector strategy, auto-waiting assertions, and code reuse. Provide inline comments on specific issues. Skip any preamble or summary introduction - start directly with the issues found."
 
           claude -p "$PROMPT" \
             --max-turns ${{ steps.changed-files.outputs.max_turns || '10' }} \
