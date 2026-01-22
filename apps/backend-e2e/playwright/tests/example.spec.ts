@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 // Test file to trigger the review agent
 // Contains some intentional issues for the review agent to catch
-// Updated to trigger v6 review
+// Testing inline review functionality
 
 test.describe("Example Test Suite", () => {
   test("should display welcome message", async ({ page }) => {

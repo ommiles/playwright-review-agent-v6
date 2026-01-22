@@ -77,16 +77,22 @@ jobs:
         if: steps.changed-files.outputs.file_count > 0
         run: npm install -g @anthropic-ai/claude-code
 
+      - name: Check for mock mode
+        id: mock-check
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if echo "$PR_BODY" | grep -qiE '\[x\]\s*Mock Review'; then
+            echo "mock=true" >> $GITHUB_OUTPUT
+          else
+            echo "mock=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run Claude Code Review
-        if: steps.changed-files.outputs.file_count > 0
+        if: steps.changed-files.outputs.file_count > 0 && steps.mock-check.outputs.mock == 'false'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          OWNER="${{ github.repository_owner }}"
-          REPO="${{ github.event.repository.name }}"
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-
           PROMPT="Review the Playwright test changes in this repo.
 
           Focus on CONVENTIONS.md standards:
@@ -114,6 +120,22 @@ jobs:
 
           cat review.json
 
+      - name: Mock Claude Review (for testing)
+        if: steps.changed-files.outputs.file_count > 0 && steps.mock-check.outputs.mock == 'true'
+        run: |
+          cat > review.json << 'EOF'
+          {
+            "body": "Found 3 issues in Playwright tests that need attention.",
+            "comments": [
+              {"path": "apps/backend-e2e/playwright/tests/example.spec.ts", "line": 12, "body": "**Raw locator** - Should use COB pattern. Move this locator to a Component Object file."},
+              {"path": "apps/backend-e2e/playwright/tests/example.spec.ts", "line": 20, "body": "**waitForTimeout** - Banned pattern. Use auto-waiting assertions instead."},
+              {"path": "apps/backend-e2e/playwright/tests/example.spec.ts", "line": 45, "body": "**Missing await** - This async operation needs `await` to prevent silent failures."}
+            ]
+          }
+          EOF
+          echo "Mock review generated:"
+          cat review.json
+
       - name: Post Review to PR
         if: steps.changed-files.outputs.file_count > 0
         env:
@@ -124,36 +146,53 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
 
-          # Check if review.json exists and is valid JSON
-          if [[ -f review.json ]] && jq -e . review.json > /dev/null 2>&1; then
-            # Extract the JSON object from Claude's response (it may be wrapped in markdown)
-            REVIEW_JSON=$(cat review.json | sed -n '/^{/,/^}/p' | head -1 || cat review.json)
+          # Check if review.json exists
+          if [[ ! -f review.json ]]; then
+            echo "No review output file found"
+            exit 0
+          fi
 
-            # Try to parse as JSON, if it fails, create a simple comment instead
-            if echo "$REVIEW_JSON" | jq -e '.body' > /dev/null 2>&1; then
-              BODY=$(echo "$REVIEW_JSON" | jq -r '.body')
-              COMMENTS=$(echo "$REVIEW_JSON" | jq -c '.comments // []')
+          # Extract JSON from markdown code fences if present
+          if grep -q '```json' review.json; then
+            sed -n '/```json/,/```/p' review.json | sed '1d;$d' > review-clean.json
+          elif grep -q '```' review.json; then
+            sed -n '/```/,/```/p' review.json | sed '1d;$d' > review-clean.json
+          else
+            cp review.json review-clean.json
+          fi
 
-              # Create the review via GitHub API
-              gh api \
-                --method POST \
-                -H "Accept: application/vnd.github+json" \
-                "/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews" \
-                -f commit_id="$HEAD_SHA" \
-                -f body="$BODY" \
-                -f event="COMMENT" \
-                --input <(echo "$REVIEW_JSON" | jq '{comments: .comments}') \
-                || echo "Failed to post review via API, falling back to comment"
-            else
-              # Fallback: post as regular PR comment
+          echo "Cleaned JSON:"
+          cat review-clean.json
+
+          # Validate JSON
+          if ! jq -e '.body' review-clean.json > /dev/null 2>&1; then
+            echo "Invalid JSON structure, falling back to comment"
+            echo "## 🎭 Playwright Code Review" > pr-comment.md
+            echo "" >> pr-comment.md
+            cat review.json >> pr-comment.md
+            gh pr comment "$PR_NUMBER" --body-file pr-comment.md
+            exit 0
+          fi
+
+          # Create the review via GitHub API
+          BODY=$(jq -r '.body' review-clean.json)
+
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews" \
+            -f commit_id="$HEAD_SHA" \
+            -f body="$BODY" \
+            -f event="COMMENT" \
+            --input <(jq '{comments: .comments}' review-clean.json) \
+            && echo "Review posted successfully!" \
+            || {
+              echo "Failed to post review via API, falling back to comment"
               echo "## 🎭 Playwright Code Review" > pr-comment.md
               echo "" >> pr-comment.md
               cat review.json >> pr-comment.md
               gh pr comment "$PR_NUMBER" --body-file pr-comment.md
-            fi
-          else
-            echo "No valid review output generated"
-          fi
+            }
 
       - name: Skip (no Playwright changes)
         if: steps.changed-files.outputs.file_count == 0
