@@ -184,16 +184,19 @@ jobs:
           fi
 
           # Create the review via GitHub API
-          BODY=$(jq -r '.body' review-clean.json)
+          # Build complete JSON payload with commit_id, body, event, and comments
+          jq --arg commit "$HEAD_SHA" --arg event "COMMENT" \
+            '{commit_id: $commit, body: .body, event: $event, comments: .comments}' \
+            review-clean.json > review-payload.json
+
+          echo "Review payload:"
+          cat review-payload.json
 
           gh api \
             --method POST \
             -H "Accept: application/vnd.github+json" \
             "/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews" \
-            -f commit_id="$HEAD_SHA" \
-            -f body="$BODY" \
-            -f event="COMMENT" \
-            --input <(jq '{comments: .comments}' review-clean.json) \
+            --input review-payload.json \
             && echo "Review posted successfully!" \
             || {
               echo "Failed to post review via API, falling back to comment"
