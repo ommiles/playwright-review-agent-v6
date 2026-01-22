@@ -77,16 +77,22 @@ jobs:
         if: steps.changed-files.outputs.file_count > 0
         run: npm install -g @anthropic-ai/claude-code
 
+      - name: Check for mock mode
+        id: mock-check
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if echo "$PR_BODY" | grep -qiE '\[x\]\s*Mock Review'; then
+            echo "mock=true" >> $GITHUB_OUTPUT
+          else
+            echo "mock=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run Claude Code Review
-        if: steps.changed-files.outputs.file_count > 0
+        if: steps.changed-files.outputs.file_count > 0 && steps.mock-check.outputs.mock == 'false'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          OWNER="${{ github.repository_owner }}"
-          REPO="${{ github.event.repository.name }}"
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-
           PROMPT="Review the Playwright test changes in this repo.
 
           Focus on CONVENTIONS.md standards:
@@ -112,6 +118,22 @@ jobs:
             --output-format json \
             | jq -r '.result // .content // .' > review.json
 
+          cat review.json
+
+      - name: Mock Claude Review (for testing)
+        if: steps.changed-files.outputs.file_count > 0 && steps.mock-check.outputs.mock == 'true'
+        run: |
+          cat > review.json << 'EOF'
+          {
+            "body": "Found 3 issues in Playwright tests that need attention.",
+            "comments": [
+              {"path": "apps/backend-e2e/playwright/tests/example.spec.ts", "line": 12, "body": "**Raw locator** - Should use COB pattern. Move this locator to a Component Object file."},
+              {"path": "apps/backend-e2e/playwright/tests/example.spec.ts", "line": 20, "body": "**waitForTimeout** - Banned pattern. Use auto-waiting assertions instead."},
+              {"path": "apps/backend-e2e/playwright/tests/example.spec.ts", "line": 45, "body": "**Missing await** - This async operation needs `await` to prevent silent failures."}
+            ]
+          }
+          EOF
+          echo "Mock review generated:"
           cat review.json
 
       - name: Post Review to PR
