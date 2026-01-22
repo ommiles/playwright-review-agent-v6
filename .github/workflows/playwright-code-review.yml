@@ -81,33 +81,79 @@ jobs:
         if: steps.changed-files.outputs.file_count > 0
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           OWNER="${{ github.repository_owner }}"
           REPO="${{ github.event.repository.name }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
 
-          PROMPT="Review the Playwright test changes in PR #${PR_NUMBER} of ${OWNER}/${REPO}.
+          PROMPT="Review the Playwright test changes in this repo.
 
           Focus on CONVENTIONS.md standards:
-          - COB pattern compliance
-          - Selector strategy
-          - Auto-waiting assertions
-          - Code reuse
+          - COB pattern compliance (no raw locators in test files)
+          - Selector strategy (prefer data-testid)
+          - Auto-waiting assertions (no waitForTimeout, no allTextContents without waiting)
+          - Missing await on async operations
+          - Code reuse (flag duplicate methods)
+          - Avoid overengineering
 
-          Use the GitHub MCP server to submit a pull request review with inline comments on specific lines where issues are found. Use the create_pull_request_review tool with:
-          - owner: ${OWNER}
-          - repo: ${REPO}
-          - pull_number: ${PR_NUMBER}
-          - event: COMMENT
-          - body: A brief summary of the review
-          - comments: Array of inline comments with path, line, and body for each issue
+          Output your review as JSON with this exact structure:
+          {
+            \"body\": \"Brief summary of the review\",
+            \"comments\": [
+              {\"path\": \"relative/file/path.ts\", \"line\": 42, \"body\": \"Issue description\"}
+            ]
+          }
 
-          Be concise. No preamble needed."
+          Only output the JSON, nothing else. If no issues found, use empty comments array."
 
           claude -p "$PROMPT" \
             --max-turns ${{ steps.changed-files.outputs.max_turns || '10' }} \
-            --allowedTools "mcp__github__create_pull_request_review,mcp__github__get_pull_request,mcp__github__get_pull_request_files,Read,Glob,Grep"
+            --output-format json \
+            | jq -r '.result // .content // .' > review.json
+
+          cat review.json
+
+      - name: Post Review to PR
+        if: steps.changed-files.outputs.file_count > 0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          # Check if review.json exists and is valid JSON
+          if [[ -f review.json ]] && jq -e . review.json > /dev/null 2>&1; then
+            # Extract the JSON object from Claude's response (it may be wrapped in markdown)
+            REVIEW_JSON=$(cat review.json | sed -n '/^{/,/^}/p' | head -1 || cat review.json)
+
+            # Try to parse as JSON, if it fails, create a simple comment instead
+            if echo "$REVIEW_JSON" | jq -e '.body' > /dev/null 2>&1; then
+              BODY=$(echo "$REVIEW_JSON" | jq -r '.body')
+              COMMENTS=$(echo "$REVIEW_JSON" | jq -c '.comments // []')
+
+              # Create the review via GitHub API
+              gh api \
+                --method POST \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews" \
+                -f commit_id="$HEAD_SHA" \
+                -f body="$BODY" \
+                -f event="COMMENT" \
+                --input <(echo "$REVIEW_JSON" | jq '{comments: .comments}') \
+                || echo "Failed to post review via API, falling back to comment"
+            else
+              # Fallback: post as regular PR comment
+              echo "## 🎭 Playwright Code Review" > pr-comment.md
+              echo "" >> pr-comment.md
+              cat review.json >> pr-comment.md
+              gh pr comment "$PR_NUMBER" --body-file pr-comment.md
+            fi
+          else
+            echo "No valid review output generated"
+          fi
 
       - name: Skip (no Playwright changes)
         if: steps.changed-files.outputs.file_count == 0
