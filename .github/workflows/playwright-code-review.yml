@@ -119,19 +119,73 @@ jobs:
             echo "No Playwright files changed in this push"
           fi
 
+      - name: Setup Node.js
+        if: |
+          github.event_name == 'issue_comment' ||
+          github.event_name == 'pull_request_review_comment' ||
+          steps.changed-files.outputs.file_count > 0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code
+        if: |
+          github.event_name == 'issue_comment' ||
+          github.event_name == 'pull_request_review_comment' ||
+          steps.changed-files.outputs.file_count > 0
+        run: npm install -g @anthropic-ai/claude-code
+
       - name: Run Claude Code Review
         if: |
           github.event_name == 'issue_comment' ||
           github.event_name == 'pull_request_review_comment' ||
           steps.changed-files.outputs.file_count > 0
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          bot_name: "playwright-reviewer"
-          # Use /review for auto-triggered reviews, let @claude mentions pass through naturally
-          prompt: "${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && 'Review the Playwright test changes. Focus on our CONVENTIONS.md standards including: COB pattern compliance, selector strategy, auto-waiting assertions, and code reuse. Provide inline comments on specific issues.' || '' }}"
-          claude_args: "--max-turns ${{ steps.changed-files.outputs.max_turns || '10' }}"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Build the prompt based on event type
+          if [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "pull_request_target" ]]; then
+            PROMPT="Review the Playwright test changes. Focus on our CONVENTIONS.md standards including: COB pattern compliance, selector strategy, auto-waiting assertions, and code reuse. Provide inline comments on specific issues."
+          else
+            # For @claude mentions, use the comment body as the prompt
+            PROMPT="${{ github.event.comment.body }}"
+          fi
+
+          # Run Claude Code with output file (-p for single-shot prompt execution)
+          claude -p "$PROMPT" \
+            --output-file review-output.md \
+            --max-turns ${{ steps.changed-files.outputs.max_turns || '10' }}
+
+      - name: Post Review to PR
+        if: |
+          github.event_name == 'issue_comment' ||
+          github.event_name == 'pull_request_review_comment' ||
+          steps.changed-files.outputs.file_count > 0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get PR number based on event type
+          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
+            PR_NUMBER="${{ github.event.issue.number }}"
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          fi
+
+          # Check if review output exists and has content
+          if [[ -f review-output.md && -s review-output.md ]]; then
+            # Add header to identify the bot
+            echo "## 🎭 Playwright Code Review" > pr-comment.md
+            echo "" >> pr-comment.md
+            cat review-output.md >> pr-comment.md
+            echo "" >> pr-comment.md
+            echo "---" >> pr-comment.md
+            echo "*Posted by playwright-reviewer*" >> pr-comment.md
+
+            # Post comment to PR
+            gh pr comment "$PR_NUMBER" --body-file pr-comment.md
+          else
+            echo "No review output generated"
+          fi
 
       - name: Skip (no Playwright changes)
         if: |
