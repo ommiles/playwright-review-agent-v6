@@ -93,7 +93,8 @@ jobs:
           - COB pattern compliance
           - Selector strategy
           - Auto-waiting assertions
-          - Code reuse
+          - Code reuse (flag new methods that duplicate existing ones)
+          - Avoid overengineering (unnecessary abstractions, overly complex solutions)
 
           Use the GitHub MCP server to submit a pull request review with inline comments on specific lines where issues are found. Use the create_pull_request_review tool with:
           - owner: ${OWNER}
